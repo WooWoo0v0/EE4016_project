@@ -1,0 +1,61 @@
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import normalize
+
+# Load the item details from the CSV file
+item_details_df = pd.read_csv('processed_Gift_Cards (2).csv')
+
+# Ensure 'salesRank' column exists
+
+# Calculate item-item similarity matrix
+item_features = item_details_df[['price', 'avg_rating', 'rank', 'brand', 'category__001','category__002','category__003', 'activeness']].values
+
+item_id = 'B00BXLVAD6' # Replace with the desired item ID
+
+# Custom similarity function for brands
+def brand_similarity(x, y):
+    return np.dot((x == y).astype(int), [0, 0, 0, 1, 0, 0, 0, 0]) # Assuming brand is the fourth feature
+
+# Custom similarity function for prices
+def price_similarity(x, y):
+    price_range_x = np.digitize(x, bins=[0, 10, 20, 30, 40, 50])
+    price_range_y = np.digitize(y, bins=[0, 10, 20, 30, 40, 50])
+    return np.dot((price_range_x == price_range_y).values*1, [0, 0, 0, 0, 1])
+
+# Custom similarity function for categories
+def category_similarity(x, y):
+    # Assuming categories are the fifth to seventh features
+    return np.dot((x == y).values*1, [0, 0, 0, 0, 0, 1, 1, 1])
+
+# Function to recommend items based on collaborative filtering
+def recommend_items(item_id, num_recommendations=5):
+    item_index = item_details_df[item_details_df['asin'] == item_id].index[0]
+
+    item_brand = item_features[item_index, [0]] # Assuming item_index is correctly defined
+    brand_similarity_matrix = np.array([[brand_similarity(item_brand, item_features[j, [0]]) for j in range(len(item_features))] for item_brand in item_features[:, [0]]])
+
+    item_price = item_features[item_index, [4]]
+    price_similarity_matrix = np.array([[price_similarity(item_price, item_features[j, [4]]) for j in range(len(item_features))] for item_price in item_features[:, [4]]])
+
+    item_category = item_features[item_index, [4, 5, 6]]
+    category_similarity_matrix = np.array([[category_similarity(item_category, item_features[j, [4, 5, 6]]) for j in range(len(item_features))] for item_category in item_features[:, [4, 5, 6]]])
+
+    rating_scores = item_features[:, [1]]
+    rating_scores_percent = rating_scores/5
+
+    activeness_scores = item_features[:, [2]]
+    norm_activeness_scores = normalize(activeness_scores, axis=0)
+
+    item_rating = 0.2 * brand_similarity_matrix + 0.795 * rating_scores_percent + 0.05 * norm_activeness_scores + 0.05 * category_similarity_matrix + 0.05 * price_similarity_matrix
+    item_rating[item_index] = 0
+
+    similar_item_indices = np.argsort(item_rating.flatten().tolist())[::-1]
+    similar_item_sort = item_details_df.reindex(similar_item_indices)
+    similar_item_select = similar_item_sort.head(num_recommendations)
+    similar_item_select.index = range(1, num_recommendations+1)
+
+    return similar_item_select['salesRank']
+
+# Example usage
+recommendations = recommend_items(item_id, num_recommendations=10)
+print("Recommended Items Sales Rank:\n", recommendations)
